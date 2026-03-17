@@ -1,0 +1,71 @@
+{
+  "name": "Daily Upload Count Reset",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "88401b4d-978b-4efc-9a7d-f7beff0e0a86",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts SET count = 0;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ae1b5610-631e-4d38-ae7a-027c37194547",
+      "name": "Execute a SQL query"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "047a88a8-c0c2-495a-8c39-fa1441011e81",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "298553e50f5cd03acba69e8c19edbd086b5970cc5886c258ea8e64ec648c7111"
+  },
+  "id": "XZSeHHpcdxycwHoI",
+  "tags": [
+    {
+      "updatedAt": "2026-03-17T00:39:24.194Z",
+      "createdAt": "2026-03-17T00:39:24.194Z",
+      "id": "iAlIKQM9vTGgtAkr",
+      "name": "triggers at midnight"
+    }
+  ]
+}

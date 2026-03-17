@@ -1,0 +1,4942 @@
+{
+  "name": "Upload Shorts (Schedule, Postgres, YouTube) cursor v2",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "Picks next class from channel_groups, finds a queued clip for that class, reserves it, reads from processed/, uploads to YouTube, waits 15 min, deletes file, marks posted.",
+        "height": 184,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -3184,
+        1920
+      ],
+      "id": "160deae4-0045-41b5-b89c-6466214db295",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'reserved', reserved_at = now() WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1472,
+        1776
+      ],
+      "id": "024457e8-83fd-4f1c-b6f6-fda2b0bbee56",
+      "name": "Reserve Clip (Postgres)"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1472,
+        2096
+      ],
+      "id": "0840ae20-277c-41d9-bbb2-a88cec48b7ab",
+      "name": "Keep Scheduler Data"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1472,
+        1936
+      ],
+      "id": "d6a13ac0-0d28-471c-93dd-d3c0d758ebe8",
+      "name": "Read Video File"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1264,
+        2000
+      ],
+      "id": "9f1ae1fb-eff0-4d12-92ed-35a7f1baf92a",
+      "name": "Merge Binary + JSON"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        48
+      ],
+      "id": "a9ee660c-4a2b-4138-8cca-26989e4d80eb",
+      "name": "Delete File"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        48
+      ],
+      "id": "ed428e59-f863-47e7-b3b2-9dd8a1e6630a",
+      "name": "Mark Clip Posted (Postgres)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        48
+      ],
+      "id": "b27e82c0-5ec4-4b32-8a8b-6d21a2eb601d",
+      "name": "Advance Scheduler (Postgres)"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "cars",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a0e314e7-77d3-4d26-8c91-b12c510427bd"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cars"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7ff281c7-6c34-47e4-ace2-e52c72d02cce",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "tech",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "tech"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "1f2efe9a-0d8a-41d2-812f-804620038ba0",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "music",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "music"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "756a3a4b-ef9f-45a3-b303-5ad98bbf0fe8",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "gaming",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "gaming"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3f042b04-9bfc-4c18-9cca-f5cfeea5e270",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "fitness",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fitness"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "5669ca3d-7ae6-4e3a-a66c-33903264171f",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "cooking",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cooking"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "f1ba51e0-68ca-443c-99d9-3cf2e4445222",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "travel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "travel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7bdf5c7e-04e0-4ca6-8593-62496618760b",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "comedy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "comedy"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "731c141d-9ef9-4754-9bd7-f12ee8e08a38",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "education",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "education"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "11732a4e-5a28-4169-bc6f-47f663d5bb9d",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "diy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "diy"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a10e69a4-a5e7-40f2-8b89-9d264fe50d9c",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "beauty",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "beauty"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c4142377-4acc-40c0-89fb-bf7c4b34393f",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "fashion",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fashion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "97d5360a-c97f-4145-a881-0767bc0615db",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "sports",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sports"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "33a7b6b2-9cad-435f-87d1-148d559f6f08",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "news",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "news"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b1362e91-393f-436b-95e9-41243c751c32",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "entertainment",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "entertainment"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d4b52903-914d-496d-bcc8-e0c593eee4a0",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "science",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "science"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "6b1d5c05-7e4b-4b58-82de-e32893706910",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "history",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "history"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "40fe3cb5-6d88-4071-ad83-e072127107c0",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "art",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "art"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a15ee53d-514c-4819-bfa8-faf398c2242f",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "pets",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pets"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7a5f7b88-c11e-48b8-b4c4-fee615f66a0a",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "nature",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "nature"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dc24d1c-1c04-4d00-bea6-c416bb18c93f",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "business",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "business"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ecca967b-29f5-4165-9fac-9e9ae2f49340",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "motivation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "motivation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "75bfc6cd-1167-4ab4-8999-71ea16d53f6b",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "lifestyle",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "lifestyle"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "aedfb403-4a39-4c82-8bc7-b7067f38b46d",
+                    "leftValue": "={{ $('Get Next Job (Postgres)').item.json.channel_key }}",
+                    "rightValue": "other",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "other"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -1056,
+        1648
+      ],
+      "id": "3b619abd-5a90-4a72-b00d-d8bfdb9a69d4",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        48
+      ],
+      "id": "6400e867-54ff-42f6-b405-611a73f907d9",
+      "name": "Wait 5 min"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        208
+      ],
+      "id": "e7f3d1d1-ed38-4592-b591-b27bbe6e6540",
+      "name": "Delete File1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        208
+      ],
+      "id": "e7d9b8b8-f7a5-4553-a7a8-a3d8cc04e053",
+      "name": "Mark Clip Posted (Postgres)1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        208
+      ],
+      "id": "50294a50-17e0-4046-9416-a8ed87c4fc5f",
+      "name": "Advance Scheduler (Postgres)1"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        208
+      ],
+      "id": "01d9bbac-e6d1-46e4-9e24-5523167c995b",
+      "name": "Wait 5 min1"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        384
+      ],
+      "id": "d7831024-dfd3-4c8c-a772-da2b7c4aa3d0",
+      "name": "Delete File2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        384
+      ],
+      "id": "d9de4fd5-936b-4e4e-9b43-28c83608678c",
+      "name": "Mark Clip Posted (Postgres)2"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        384
+      ],
+      "id": "cf6b35da-764d-4271-8cd4-5d2b7344f445",
+      "name": "Wait 5 min2"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        544
+      ],
+      "id": "12b5ee1f-52d5-41db-9b62-3841938ec64f",
+      "name": "Delete File3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        544
+      ],
+      "id": "bb879a13-1e64-4e3c-b13b-e29935c39c5a",
+      "name": "Mark Clip Posted (Postgres)3"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        544
+      ],
+      "id": "d7bf4c74-e3c2-4bc6-b985-7a188b4e98d0",
+      "name": "Wait 5 min3"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        736
+      ],
+      "id": "587e57df-88e7-42cc-92a1-2bb7dfea14ce",
+      "name": "Delete File4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        736
+      ],
+      "id": "592845c0-31b1-4854-8c20-5019442470c9",
+      "name": "Mark Clip Posted (Postgres)4"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        736
+      ],
+      "id": "5312b483-3846-4e28-aba6-fc861ce938b4",
+      "name": "Wait 5 min4"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        928
+      ],
+      "id": "1f3d4ce5-b8f4-489f-a551-3a3400db6595",
+      "name": "Delete File5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        928
+      ],
+      "id": "fc2d8b8a-3be6-4568-89e5-28e3017fe1a7",
+      "name": "Mark Clip Posted (Postgres)5"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        928
+      ],
+      "id": "2cb52192-865f-4e8f-bf4d-7d1e81f428b4",
+      "name": "Wait 5 min5"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1104
+      ],
+      "id": "b5b5c183-23bd-4bcb-b63b-b570f3c679ce",
+      "name": "Delete File6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1104
+      ],
+      "id": "bd13ecb8-81a8-45f5-bcfa-baaaba99ea3b",
+      "name": "Mark Clip Posted (Postgres)6"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1104
+      ],
+      "id": "a0c57402-1cce-4712-80d1-4b43fa038f1a",
+      "name": "Wait 5 min6"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1280
+      ],
+      "id": "38f7412b-438b-4df1-bd8c-094bf3bc126e",
+      "name": "Delete File7"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1280
+      ],
+      "id": "48e09249-6a44-48ca-86ec-e4da99241223",
+      "name": "Mark Clip Posted (Postgres)7"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1280
+      ],
+      "id": "d3d040be-7fc4-40db-a786-37f770775789",
+      "name": "Wait 5 min7"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1456
+      ],
+      "id": "1536ef27-7ea3-4be5-8fed-fcab62bf9e1c",
+      "name": "Delete File8"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1456
+      ],
+      "id": "d568eec5-a9f1-4310-af31-cf43dd722699",
+      "name": "Mark Clip Posted (Postgres)8"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1456
+      ],
+      "id": "b73d1b8a-89ba-4c23-894c-e34b739786cb",
+      "name": "Wait 5 min8"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1632
+      ],
+      "id": "deb5492d-8569-4950-8b10-2310c92a7f8c",
+      "name": "Delete File9"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1632
+      ],
+      "id": "e33b8b0a-e229-4477-b371-2032156592e3",
+      "name": "Mark Clip Posted (Postgres)9"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1632
+      ],
+      "id": "bca4494c-dd8a-4be7-adc8-74cea806da40",
+      "name": "Wait 5 min9"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1808
+      ],
+      "id": "9c35e018-6d3e-4feb-b890-2b55ee0d10f9",
+      "name": "Delete File10"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1808
+      ],
+      "id": "fa16a5b8-1dce-4916-b834-b851d65dc862",
+      "name": "Mark Clip Posted (Postgres)10"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1808
+      ],
+      "id": "65daba91-b148-4649-a886-3c48e0787ef8",
+      "name": "Wait 5 min10"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1984
+      ],
+      "id": "62999ecb-32fc-4bd6-9c30-919c9f501c6a",
+      "name": "Delete File11"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        1984
+      ],
+      "id": "8f4ccc1c-584d-441c-b4dc-35d2150e6445",
+      "name": "Mark Clip Posted (Postgres)11"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1984
+      ],
+      "id": "20b8897a-7334-44c3-8a13-6b567e8f83cb",
+      "name": "Wait 5 min11"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2160
+      ],
+      "id": "635b2d53-d262-4e76-994d-cb8ba03b54c1",
+      "name": "Delete File12"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        2160
+      ],
+      "id": "1e383159-dd4c-4115-acbc-6c94495c3edb",
+      "name": "Mark Clip Posted (Postgres)12"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        2160
+      ],
+      "id": "0f1cfc6d-53b7-4fc0-87e3-065ec3065108",
+      "name": "Wait 5 min12"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2336
+      ],
+      "id": "c815c6df-8555-45d9-a048-733fa6e3267b",
+      "name": "Delete File13"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        2336
+      ],
+      "id": "e146e4e9-f76c-4477-b661-9cf53d6bf9ab",
+      "name": "Mark Clip Posted (Postgres)13"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        2336
+      ],
+      "id": "a9a0ef09-55cf-4a80-81e1-fdc562236c35",
+      "name": "Wait 5 min13"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2512
+      ],
+      "id": "0f50b1a8-86c2-4ca7-81d8-4d4859cc0902",
+      "name": "Delete File14"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        2512
+      ],
+      "id": "e4c134a5-678e-4621-9e48-623b4dd34b8e",
+      "name": "Mark Clip Posted (Postgres)14"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        2512
+      ],
+      "id": "737bde79-eff3-4308-8029-a797ffb0890c",
+      "name": "Wait 5 min14"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2688
+      ],
+      "id": "308f8045-5897-4534-846e-2a0cc5761a27",
+      "name": "Delete File15"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        2688
+      ],
+      "id": "6fb3f890-f2b0-4758-8379-72eddb08c102",
+      "name": "Mark Clip Posted (Postgres)15"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        2688
+      ],
+      "id": "81c082b8-3192-4801-bbd4-5530799903a4",
+      "name": "Wait 5 min15"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        2880
+      ],
+      "id": "3d219b29-a13e-4b5a-afd9-a3da06897b0c",
+      "name": "Delete File16"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        2880
+      ],
+      "id": "cc0e067a-fbc2-4445-98ae-05701e793f09",
+      "name": "Mark Clip Posted (Postgres)16"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        2880
+      ],
+      "id": "25fdc573-6bcd-40d9-b1c6-7eeb217124f7",
+      "name": "Wait 5 min16"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        3072
+      ],
+      "id": "6ea4685e-39a1-4143-b2e3-505a4ba26373",
+      "name": "Delete File17"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        3072
+      ],
+      "id": "f9277f43-8437-4ac7-a863-df64dea52bd9",
+      "name": "Mark Clip Posted (Postgres)17"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        3072
+      ],
+      "id": "454214ef-1da1-4fc8-b6dc-d4e92bb77633",
+      "name": "Wait 5 min17"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        3264
+      ],
+      "id": "c565e817-f937-4156-a7b2-865c88295ca4",
+      "name": "Delete File18"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        3264
+      ],
+      "id": "e7ab74d0-46b2-4675-9faf-5487854ac63c",
+      "name": "Mark Clip Posted (Postgres)18"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        3264
+      ],
+      "id": "ccb9654f-65c5-44dd-ae00-25367dacc525",
+      "name": "Wait 5 min18"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        3440
+      ],
+      "id": "4ab79c0b-ce44-42ba-86bc-b48b450a4faf",
+      "name": "Delete File19"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        3440
+      ],
+      "id": "160a1faa-1ee5-4988-ab91-d47fcb09f758",
+      "name": "Mark Clip Posted (Postgres)19"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        3440
+      ],
+      "id": "e7beb007-db4c-429c-b9f7-5ff4c68cf992",
+      "name": "Wait 5 min19"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        3632
+      ],
+      "id": "ed90a747-903b-4021-9114-f3ef57349320",
+      "name": "Delete File20"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        3632
+      ],
+      "id": "4c00cb5e-b58f-43af-9610-f8a4c8e681c3",
+      "name": "Mark Clip Posted (Postgres)20"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        3632
+      ],
+      "id": "2efbb155-d2ad-4ef5-bd48-9dd99a194c24",
+      "name": "Wait 5 min20"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        3824
+      ],
+      "id": "0a845df6-f8b8-4c1c-b0bf-857c4cd73303",
+      "name": "Delete File21"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        3824
+      ],
+      "id": "2bec450d-7dc5-4849-8c4b-553ad200b91d",
+      "name": "Mark Clip Posted (Postgres)21"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        3824
+      ],
+      "id": "f24ab83d-2a70-4d14-85b3-e5e1310f1d7e",
+      "name": "Wait 5 min21"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        4016
+      ],
+      "id": "15a4e318-9fa9-4491-a527-9a5cf43eaaa6",
+      "name": "Delete File22"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        4016
+      ],
+      "id": "2f1c7a80-a322-4a1f-a3e6-d478fb0b19bb",
+      "name": "Mark Clip Posted (Postgres)22"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        4016
+      ],
+      "id": "f00c583e-30b5-4915-8797-95346e109957",
+      "name": "Wait 5 min22"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f \"{{ $('Merge Binary + JSON').item.json.file_path }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        832,
+        4208
+      ],
+      "id": "7c95c21c-1cd5-4733-bc11-9c436f73d70c",
+      "name": "Delete File23"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clips SET status = 'posted' WHERE clip_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Merge Binary + JSON').item.json.clip_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        4208
+      ],
+      "id": "c1e7b1ae-c3e7-4930-96f1-dc035aaa8b11",
+      "name": "Mark Clip Posted (Postgres)23"
+    },
+    {
+      "parameters": {
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        4208
+      ],
+      "id": "6f3e5920-3c31-47a4-842d-3ad699de567d",
+      "name": "Wait 5 min23"
+    },
+    {
+      "parameters": {
+        "content": "## this is where to add additional channels or platforms",
+        "height": 80,
+        "width": 368,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a339f82e-bb7b-453c-abe2-d2c48fc3058d",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## cars\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        48
+      ],
+      "id": "6a5e07f8-e295-4390-87dd-d5655362f416",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## tech\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        208
+      ],
+      "id": "2932b9a1-36c4-42b8-a8cc-22dd06ff386d",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## music\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        400
+      ],
+      "id": "ac7a900c-5285-4788-9d13-32e5bf81e91b",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## gaming\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        544
+      ],
+      "id": "1ebb6a0a-b569-4267-b6a8-d855233d4b32",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "## fitness\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        736
+      ],
+      "id": "6981c92d-1bc9-4ffe-bb10-02fdabbc437a",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "## cooking\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        928
+      ],
+      "id": "a8de398c-a46f-4902-9a29-01b31995d78d",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "## travel\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        1088
+      ],
+      "id": "0bec367b-89f4-4e2c-a009-22a8f4886a0a",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "## comedy\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        1296
+      ],
+      "id": "515ccc2c-e29b-46bb-b0ce-e3694d031da1",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "## education\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        1456
+      ],
+      "id": "cb71239e-6db6-4cbc-99b5-288307aefe90",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## DIY\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        1632
+      ],
+      "id": "7d6943d0-2b57-4cc7-aa56-4545c7d3a819",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "content": "## beauty\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        1808
+      ],
+      "id": "0a8e6d26-bbc1-4320-8aa3-6fb2d5180e87",
+      "name": "Sticky Note13"
+    },
+    {
+      "parameters": {
+        "content": "## fashion\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        1984
+      ],
+      "id": "c6cd9974-518d-49d3-b8ff-7ddfe6664ec0",
+      "name": "Sticky Note14"
+    },
+    {
+      "parameters": {
+        "content": "## sports\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        2160
+      ],
+      "id": "ee7aca46-eeff-46a5-8dee-ab1d1527d235",
+      "name": "Sticky Note15"
+    },
+    {
+      "parameters": {
+        "content": "## news\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        2336
+      ],
+      "id": "76f6b1c0-ef33-48b8-8297-bba568b7d89a",
+      "name": "Sticky Note16"
+    },
+    {
+      "parameters": {
+        "content": "### entertainment\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        2512
+      ],
+      "id": "298954b0-0714-4b69-b82f-6d3f470ee9f4",
+      "name": "Sticky Note17"
+    },
+    {
+      "parameters": {
+        "content": "## science\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        2688
+      ],
+      "id": "8148985c-2c32-46ac-8aaf-6402a13e270a",
+      "name": "Sticky Note18"
+    },
+    {
+      "parameters": {
+        "content": "## history\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        2880
+      ],
+      "id": "b8625da5-5772-4b73-b7df-390a40f9832f",
+      "name": "Sticky Note19"
+    },
+    {
+      "parameters": {
+        "content": "## art\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        3072
+      ],
+      "id": "66125c51-3fa0-484e-870d-a1aae66ed748",
+      "name": "Sticky Note20"
+    },
+    {
+      "parameters": {
+        "content": "## pets\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        3264
+      ],
+      "id": "06e71dda-c358-4891-86fa-631fbeb03d52",
+      "name": "Sticky Note21"
+    },
+    {
+      "parameters": {
+        "content": "## nature\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        3440
+      ],
+      "id": "58c6abb9-ed30-41d5-b9dc-bb203355cc70",
+      "name": "Sticky Note22"
+    },
+    {
+      "parameters": {
+        "content": "## business\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        3632
+      ],
+      "id": "e951589e-cef8-4a93-b71e-16dc690c81c7",
+      "name": "Sticky Note23"
+    },
+    {
+      "parameters": {
+        "content": "## motivation\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        3824
+      ],
+      "id": "f415412f-259b-4932-8414-f747fccf04cf",
+      "name": "Sticky Note24"
+    },
+    {
+      "parameters": {
+        "content": "## lifestytle\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        4016
+      ],
+      "id": "a468c999-fb46-4fe2-8ec8-18e0ab5434df",
+      "name": "Sticky Note25"
+    },
+    {
+      "parameters": {
+        "content": "## other\n\n\n",
+        "height": 96,
+        "width": 150,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        4208
+      ],
+      "id": "8a9eb926-40f1-4c7f-a9dd-6f49704120e7",
+      "name": "Sticky Note26"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        48
+      ],
+      "id": "72ba665b-2393-40c6-931a-5bcb4559d9ce",
+      "name": "Upload - Antigoyslop"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        208
+      ],
+      "id": "aad74d31-67af-49c1-a67e-5135c59f4f12",
+      "name": "Upload - Antigoyslop2"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        384
+      ],
+      "id": "2b87d9b8-fd9d-40aa-8702-71cffcc1e811",
+      "name": "Upload - Antigoyslop3"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        544
+      ],
+      "id": "adddf3a6-5963-4b1a-9e41-5fc8f8525914",
+      "name": "Upload - Antigoyslop4"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        736
+      ],
+      "id": "6a5967b7-0f66-4876-a438-616f4b2c0060",
+      "name": "Upload - Antigoyslop5"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        928
+      ],
+      "id": "d9c68c45-f0eb-4c22-90c6-0c06f55ce669",
+      "name": "Upload - Antigoyslop6"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1104
+      ],
+      "id": "96c4a0ae-3d74-4eba-9208-bb3fd5922a88",
+      "name": "Upload - Antigoyslop7"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1280
+      ],
+      "id": "d31a7688-3db5-44f9-92e3-65cc5ecf4470",
+      "name": "Upload - Antigoyslop8"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1456
+      ],
+      "id": "f2ce3774-4ce0-48cf-b37a-40f39e1a848f",
+      "name": "Upload - TKTI"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1632
+      ],
+      "id": "36d8bffa-938f-4e2f-92a4-5ce4ba7cc3a9",
+      "name": "Upload - TKTI2"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1808
+      ],
+      "id": "da2e51be-b9a8-42d7-8e6b-6c05a0188404",
+      "name": "Upload - TKTI3"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1984
+      ],
+      "id": "6bb4da67-b852-418d-bb88-2b6cfc246527",
+      "name": "Upload - TKTI4"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        2160
+      ],
+      "id": "5aad37a0-8d8e-4f86-80cd-e0f69dbfb142",
+      "name": "Upload - TKTI5"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        2336
+      ],
+      "id": "7ee292f9-0355-4203-b7b7-3a4f35886e95",
+      "name": "Upload - TKTI6"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        2512
+      ],
+      "id": "73ef4cf3-fc1f-4234-9a25-89d4dbd5fb6f",
+      "name": "Upload - TKTI7"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        2688
+      ],
+      "id": "10a2a594-17f9-45a2-9647-ae1d773aa1f5",
+      "name": "Upload - TKTI8"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        2880
+      ],
+      "id": "757007c9-64c6-4ff9-b13d-2ab8c58ee019",
+      "name": "Upload - WeMachine"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        3072
+      ],
+      "id": "d540d3fe-8b87-4186-b02e-c0d3976ca083",
+      "name": "Upload - WeMachine2"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        3264
+      ],
+      "id": "b7d0ee14-af06-4ec8-8776-90e21d6ee7f3",
+      "name": "Upload - WeMachine3"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        3440
+      ],
+      "id": "a8ef7c61-da4e-48c7-aeba-0b11dd4b6cd9",
+      "name": "Upload - WeMachine4"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        3632
+      ],
+      "id": "cb34957f-f0e3-42f1-93ce-ca9ed8c8f560",
+      "name": "Upload - WeMachine5"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        3824
+      ],
+      "id": "99b4a505-8286-414a-9f24-6ba30218683b",
+      "name": "Upload - WeMachine6"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        4016
+      ],
+      "id": "a0907cd3-b111-4610-8504-1b83a30faa92",
+      "name": "Upload - WeMachine7"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "23",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        4208
+      ],
+      "id": "bd636dd9-07b8-4eae-a798-7990101f054c",
+      "name": "Upload - WeMachine8"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1936,
+        1936
+      ],
+      "id": "ab1b037f-363c-4475-b9e5-d243f3c13997",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "   SELECT\n     c.clip_id,\n     c.file_path,\n     c.title,\n     c.transcript,\n     c.clip_class,\n     c.tags,\n     duc.channel_key\n   FROM daily_upload_counts duc\n   JOIN clips c\n     ON c.clip_class = duc.channel_key\n    AND c.status = 'queued'\n   WHERE duc.count < 1\n   ORDER BY duc.channel_key, c.created_at\n   LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1728,
+        1936
+      ],
+      "id": "eeb1f479-cb1e-4a0d-b624-ca26c824c914",
+      "name": "Get Next Job (Postgres)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        384
+      ],
+      "id": "2d40d0e1-4a4c-44be-b1cf-989cd70b925a",
+      "name": "Advance Scheduler (Postgres)2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        544
+      ],
+      "id": "f55b3bc4-a52d-46bc-9ca8-660a7f45c096",
+      "name": "Advance Scheduler (Postgres)3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        736
+      ],
+      "id": "c7ab836b-45fb-4509-9e7c-ef1a6d2a723a",
+      "name": "Advance Scheduler (Postgres)4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        928
+      ],
+      "id": "fd0c6dc3-dfb2-445a-9628-b6d99ae261ae",
+      "name": "Advance Scheduler (Postgres)5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1104
+      ],
+      "id": "d4dbb573-2173-428b-a5a8-8f12e13adf86",
+      "name": "Advance Scheduler (Postgres)6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1280
+      ],
+      "id": "4b0cfb2f-1274-4af5-94bc-99de2613b316",
+      "name": "Advance Scheduler (Postgres)7"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1456
+      ],
+      "id": "79b36d1c-e3d4-4b4d-9401-30bb63af8853",
+      "name": "Advance Scheduler (Postgres)8"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1632
+      ],
+      "id": "d544ef30-fdae-4ea7-8100-acd899b435cf",
+      "name": "Advance Scheduler (Postgres)9"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1808
+      ],
+      "id": "a9c0c9e2-dd7e-4198-b091-eced45f45d59",
+      "name": "Advance Scheduler (Postgres)10"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        1984
+      ],
+      "id": "3062299f-06fd-46bc-a50d-e360ed89ba9b",
+      "name": "Advance Scheduler (Postgres)11"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        2160
+      ],
+      "id": "aa717ddc-24c1-44c3-a87e-38cfacc9a638",
+      "name": "Advance Scheduler (Postgres)12"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        2336
+      ],
+      "id": "41688c6c-e21b-43c0-91ce-6bc8943fe7c1",
+      "name": "Advance Scheduler (Postgres)13"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        2512
+      ],
+      "id": "85cd4b9f-0187-4060-8827-ca0686db6ee3",
+      "name": "Advance Scheduler (Postgres)14"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        2688
+      ],
+      "id": "ab5541cb-7956-4897-b9ee-8fee6267ca61",
+      "name": "Advance Scheduler (Postgres)15"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        2880
+      ],
+      "id": "2c5dc60c-76a7-4555-8649-7d8636d200e4",
+      "name": "Advance Scheduler (Postgres)16"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        3072
+      ],
+      "id": "2c06361c-ed32-43c4-8835-2267775b2c26",
+      "name": "Advance Scheduler (Postgres)17"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        3264
+      ],
+      "id": "ebc28770-1f08-4e71-b8f9-151528a1de7a",
+      "name": "Advance Scheduler (Postgres)18"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        3440
+      ],
+      "id": "ec7f67b3-5776-47b8-a1be-432ef7d3096f",
+      "name": "Advance Scheduler (Postgres)19"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        3632
+      ],
+      "id": "53b88756-16d0-41c6-8c3a-2521536dd9c5",
+      "name": "Advance Scheduler (Postgres)20"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        3824
+      ],
+      "id": "9b81e1b4-3d4c-47e5-ae34-6a86e8f81e66",
+      "name": "Advance Scheduler (Postgres)21"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        4016
+      ],
+      "id": "dc094e8e-e4df-4abc-bd20-9ae384605f36",
+      "name": "Advance Scheduler (Postgres)22"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE daily_upload_counts\nSET count = count + 1\nWHERE channel_key = $1",
+        "options": {
+          "queryReplacement": "={{ $json.channel_key }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1280,
+        4208
+      ],
+      "id": "2f7408b6-4346-4106-a26b-5355fee4bf71",
+      "name": "Advance Scheduler (Postgres)23"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        48
+      ],
+      "id": "ea975eeb-9501-40fa-af95-14818bff15aa",
+      "name": "Discord"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        208
+      ],
+      "id": "e87d99e6-e7f1-430b-9528-ae286a9df737",
+      "name": "Discord1"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        384
+      ],
+      "id": "3ecda4a5-cd51-4a6f-8560-9bcaaf1ec90f",
+      "name": "Discord2"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        544
+      ],
+      "id": "634ab7ec-1bd3-458b-9434-6d5bd97edc21",
+      "name": "Discord3"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        736
+      ],
+      "id": "e5848fa5-0b10-48cc-8f13-ffe715c6642f",
+      "name": "Discord4"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        928
+      ],
+      "id": "d5f3ae7f-cd39-466d-a51b-016089802e4c",
+      "name": "Discord5"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1104
+      ],
+      "id": "b1f65c55-6937-4f64-bad5-2de7fcb7e6ec",
+      "name": "Discord6"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1280
+      ],
+      "id": "eda3fad6-361c-4cc9-b59a-f875f7a27164",
+      "name": "Discord7"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1456
+      ],
+      "id": "1352825c-6008-46f8-aab5-63743c72313e",
+      "name": "Discord8"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1632
+      ],
+      "id": "bb970257-6121-4a28-a1ef-edcb5548a5a6",
+      "name": "Discord9"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1808
+      ],
+      "id": "467e9ed4-c518-49d6-b438-9516639b2260",
+      "name": "Discord10"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1984
+      ],
+      "id": "c6012298-26a0-4cfc-bee7-beb92ef81262",
+      "name": "Discord11"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        2160
+      ],
+      "id": "60ea2419-ce95-4c26-b459-ee9379fcfd74",
+      "name": "Discord12"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        2336
+      ],
+      "id": "a6dfb1e3-fd88-4617-bf98-ef21a61cd86c",
+      "name": "Discord13"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        2512
+      ],
+      "id": "32ea4fed-da18-4ee0-b221-b433ac303c43",
+      "name": "Discord14"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        2688
+      ],
+      "id": "c3c3e707-a169-4444-a0cc-e872ab2764cc",
+      "name": "Discord15"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        2880
+      ],
+      "id": "7b47e4c9-e6dd-4eeb-8536-c2705ee6a993",
+      "name": "Discord16"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        3072
+      ],
+      "id": "44fa4f78-58a1-4a3f-bf6b-9f0a98a1150f",
+      "name": "Discord17"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        3264
+      ],
+      "id": "fd61b4af-2142-439a-9cb1-bfba436d7cc8",
+      "name": "Discord18"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        3440
+      ],
+      "id": "4f9bea97-7960-4680-9cb4-f8b50c46bf08",
+      "name": "Discord19"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        3632
+      ],
+      "id": "c96f5966-d291-44a4-be96-7cf17cb58f4a",
+      "name": "Discord20"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        3824
+      ],
+      "id": "5d18e7d4-5a13-401b-9864-f8c91072942f",
+      "name": "Discord21"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        4016
+      ],
+      "id": "2b838602-e9bb-4df1-9fc5-676ea3cc2fa7",
+      "name": "Discord22"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=📺 Short posted:\n\nChannel Key : {{ $('Merge Binary + JSON').item.json.channel_key }}\n\nhttps://www.youtube.com/shorts/{{ $('Upload - Antigoyslop').item.json.uploadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        672,
+        4208
+      ],
+      "id": "b4355c50-6800-4428-9bee-13e059150991",
+      "name": "Discord23"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Read Video File": {
+      "main": [
+        [
+          {
+            "node": "Merge Binary + JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Scheduler Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Binary + JSON",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Binary + JSON": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Upload - Antigoyslop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop6",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop7",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - Antigoyslop8",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI6",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI7",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - TKTI8",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine6",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine7",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload - WeMachine8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min": {
+      "main": [
+        [
+          {
+            "node": "Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File1": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)1": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min1": {
+      "main": [
+        [
+          {
+            "node": "Discord1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File2": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)2": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min2": {
+      "main": [
+        [
+          {
+            "node": "Discord2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File3": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)3": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min3": {
+      "main": [
+        [
+          {
+            "node": "Discord3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File4": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)4": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min4": {
+      "main": [
+        [
+          {
+            "node": "Discord4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File5": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)5": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min5": {
+      "main": [
+        [
+          {
+            "node": "Discord5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File6": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)6": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min6": {
+      "main": [
+        [
+          {
+            "node": "Discord6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File7": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)7": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min7": {
+      "main": [
+        [
+          {
+            "node": "Discord7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File8": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)8": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min8": {
+      "main": [
+        [
+          {
+            "node": "Discord8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File9": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)9": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min9": {
+      "main": [
+        [
+          {
+            "node": "Discord9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File10": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)10": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min10": {
+      "main": [
+        [
+          {
+            "node": "Discord10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File11": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)11": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min11": {
+      "main": [
+        [
+          {
+            "node": "Discord11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File12": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)12": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min12": {
+      "main": [
+        [
+          {
+            "node": "Discord12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File13": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)13": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min13": {
+      "main": [
+        [
+          {
+            "node": "Discord13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File14": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)14": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min14": {
+      "main": [
+        [
+          {
+            "node": "Discord14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File15": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)15": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min15": {
+      "main": [
+        [
+          {
+            "node": "Discord15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File16": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)16": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min16": {
+      "main": [
+        [
+          {
+            "node": "Discord16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File17": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)17": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min17": {
+      "main": [
+        [
+          {
+            "node": "Discord17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File18": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)18": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min18": {
+      "main": [
+        [
+          {
+            "node": "Discord18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File19": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)19": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min19": {
+      "main": [
+        [
+          {
+            "node": "Discord19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File20": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)20": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min20": {
+      "main": [
+        [
+          {
+            "node": "Discord20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File21": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)21": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min21": {
+      "main": [
+        [
+          {
+            "node": "Discord21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File22": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)22",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)22": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)22",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min22": {
+      "main": [
+        [
+          {
+            "node": "Discord22",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete File23": {
+      "main": [
+        [
+          {
+            "node": "Mark Clip Posted (Postgres)23",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Clip Posted (Postgres)23": {
+      "main": [
+        [
+          {
+            "node": "Advance Scheduler (Postgres)23",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 min23": {
+      "main": [
+        [
+          {
+            "node": "Discord23",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop2": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop3": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop4": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop5": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop6": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop7": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - Antigoyslop8": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI2": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI3": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI4": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI5": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI6": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI7": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - TKTI8": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine2": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine3": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine4": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine5": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine6": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine7": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min22",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload - WeMachine8": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 min23",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Next Job (Postgres)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Next Job (Postgres)": {
+      "main": [
+        [
+          {
+            "node": "Reserve Clip (Postgres)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Video File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Keep Scheduler Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord": {
+      "main": [
+        [
+          {
+            "node": "Delete File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord1": {
+      "main": [
+        [
+          {
+            "node": "Delete File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord23": {
+      "main": [
+        [
+          {
+            "node": "Delete File23",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord22": {
+      "main": [
+        [
+          {
+            "node": "Delete File22",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord21": {
+      "main": [
+        [
+          {
+            "node": "Delete File21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord20": {
+      "main": [
+        [
+          {
+            "node": "Delete File20",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord19": {
+      "main": [
+        [
+          {
+            "node": "Delete File19",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord18": {
+      "main": [
+        [
+          {
+            "node": "Delete File18",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord17": {
+      "main": [
+        [
+          {
+            "node": "Delete File17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord16": {
+      "main": [
+        [
+          {
+            "node": "Delete File16",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord15": {
+      "main": [
+        [
+          {
+            "node": "Delete File15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord14": {
+      "main": [
+        [
+          {
+            "node": "Delete File14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord13": {
+      "main": [
+        [
+          {
+            "node": "Delete File13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord12": {
+      "main": [
+        [
+          {
+            "node": "Delete File12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord11": {
+      "main": [
+        [
+          {
+            "node": "Delete File11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord10": {
+      "main": [
+        [
+          {
+            "node": "Delete File10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord9": {
+      "main": [
+        [
+          {
+            "node": "Delete File9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord8": {
+      "main": [
+        [
+          {
+            "node": "Delete File8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord7": {
+      "main": [
+        [
+          {
+            "node": "Delete File7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord6": {
+      "main": [
+        [
+          {
+            "node": "Delete File6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord5": {
+      "main": [
+        [
+          {
+            "node": "Delete File5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord4": {
+      "main": [
+        [
+          {
+            "node": "Delete File4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord3": {
+      "main": [
+        [
+          {
+            "node": "Delete File3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord2": {
+      "main": [
+        [
+          {
+            "node": "Delete File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e70d96ed-d13e-4622-91b2-d51fc05f4ae2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "298553e50f5cd03acba69e8c19edbd086b5970cc5886c258ea8e64ec648c7111"
+  },
+  "id": "NDRAM5dqc0FdzT9l",
+  "tags": [
+    {
+      "name": "triggers every 15m",
+      "id": "11L93QanLFef2F0X",
+      "updatedAt": "2026-03-17T00:40:06.433Z",
+      "createdAt": "2026-03-17T00:40:06.433Z"
+    }
+  ]
+}

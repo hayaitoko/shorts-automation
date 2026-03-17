@@ -1,0 +1,932 @@
+{
+  "name": "Feed Playlist (Youtube API)",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.clip_class,\n  t.target_count,\n  COALESCE(COUNT(c.clip_id), 0) AS queued_count,\n  (t.target_count - COALESCE(COUNT(c.clip_id), 0)) AS deficit\nFROM feed_inventory_targets t\nLEFT JOIN clips c\n  ON c.clip_class = t.clip_class\n AND c.status = 'queued'\nGROUP BY t.clip_class, t.target_count\nHAVING (t.target_count - COALESCE(COUNT(c.clip_id), 0)) > 0;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -384,
+        64
+      ],
+      "id": "32a1cd0a-548c-4e96-be26-9a1d7909f442",
+      "name": "Get Classes Needing Inventory (Postgres)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Map each class to a YouTube search config.\n// Fill in channelId/query to match your sources.\nconst config = {\n  cars:          { query: 'car reviews podcast',           channelId: '' },\n  tech:          { query: 'tech news podcast',             channelId: '' },\n  music:         { query: 'music production tips',         channelId: '' },\n  gaming:        { query: 'gaming highlights',             channelId: '' },\n  fitness:       { query: 'workout motivation talk',       channelId: '' },\n  cooking:       { query: 'cooking show long form',        channelId: '' },\n  travel:        { query: 'travel vlog',                   channelId: '' },\n  comedy:        { query: 'standup comedy special',        channelId: '' },\n  education:     { query: 'educational lecture',           channelId: '' },\n  diy:           { query: 'DIY tutorial',                  channelId: '' },\n  beauty:        { query: 'makeup tutorial long',          channelId: '' },\n  fashion:       { query: 'fashion tips talk',             channelId: '' },\n  sports:        { query: 'sports analysis show',          channelId: '' },\n  news:          { query: 'news commentary',               channelId: '' },\n  entertainment: { query: 'celebrity interview',           channelId: '' },\n  science:       { query: 'science documentary',           channelId: '' },\n  history:       { query: 'history documentary',           channelId: '' },\n  art:           { query: 'art tutorial',                  channelId: '' },\n  pets:          { query: 'dog training long video',       channelId: '' },\n  nature:        { query: 'nature documentary',            channelId: '' },\n  business:      { query: 'business podcast',              channelId: '' },\n  motivation:    { query: 'motivational speech long',      channelId: '' },\n  lifestyle:     { query: 'lifestyle vlog',                channelId: '' },\n  other:         { query: 'viral stories podcast',         channelId: '' },\n};\n\nconst out = [];\n\nfor (const i of items) {\n  const { clip_class, deficit } = i.json;\n  const cfg = config[clip_class] || config.other;\n\n  // How many new candidates to fetch for this class this run\n  const maxResults = Math.min(Math.max(deficit, 1), 10);\n\n  out.push({\n    json: {\n      clip_class,\n      maxResults,\n      query: cfg.query,\n      channelId: cfg.channelId || null,\n    },\n  });\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "51614d3d-64ba-4672-9a64-25303e70391e",
+      "name": "Build Search Jobs"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        624,
+        -80
+      ],
+      "id": "a6432827-afc2-4f7a-b1be-89378d822552",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\n\nfor (const item of $input.all()) {\n  const clip_class = item.json.clip_class || 'other';\n  const items = item.json.items || [];\n\n  for (const v of items) {\n    const videoId = v.id?.videoId || v.id;\n    if (!videoId) continue;\n    const title = (v.snippet && v.snippet.title) ? v.snippet.title : '';\n    out.push({ json: { videoId, title, clip_class } });\n  }\n}\n\n// Dedupe by videoId (same video can appear in multiple class searches)\nconst seen = new Set();\nreturn out.filter((o) => {\n  if (seen.has(o.json.videoId)) return false;\n  seen.add(o.json.videoId);\n  return true;\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -80
+      ],
+      "id": "f3d8c78b-10b1-44da-9c0f-69d635e202f2",
+      "name": "Normalize Candidates (Code)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT video_id FROM playlist_seen_videos WHERE video_id IN ({{ $json.inList }})",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        -80
+      ],
+      "id": "e7ecb380-3f47-4036-9d64-5ae13bc49991",
+      "name": "Get Already Seen (Postgres)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const videoIds = $input.all().map((i) => i.json.videoId).filter(Boolean);\n\nconst inList = videoIds.length\n  ? videoIds.map((id) => \"'\" + String(id).replace(/'/g, \"''\") + \"'\").join(',')\n  : \"NULL\";  // IN (NULL) returns no rows\n\nreturn [{ json: { videoIds, inList } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -80
+      ],
+      "id": "605dabb9-fd5b-4888-b45b-2758da1df1bb",
+      "name": "Aggregate and build an IN list"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input 1: Normalize Candidates (all videos). Input 2: Get Already Seen (video_id rows).\nconst candidates = $input.all(0) || [];\nconst seenRows = $input.all(1) || [];\nconst seen = new Set(seenRows.map((r) => r.json?.video_id).filter(Boolean));\n\nreturn candidates.filter((c) => !seen.has(c.json.videoId));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -192
+      ],
+      "id": "80e84bfd-21fd-46ea-8aee-e4fbc9ad3a9d",
+      "name": "Filter New Only"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "59e6ea3b-de88-4b8e-90d8-58a7eec35385",
+              "leftValue": "={{ $items('Filter New Only').length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1632,
+        -192
+      ],
+      "id": "a533482f-4389-402f-bf3c-5956c0b25dc6",
+      "name": "Has New Videos?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(u.units_used, 0) AS units_used,\n  COALESCE(u.daily_limit, 10000) AS daily_limit\nFROM (SELECT 1) dummy\nLEFT JOIN youtube_quota_usage u ON u.usage_date = CURRENT_DATE;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -208,
+        64
+      ],
+      "id": "ec4946d9-4814-41e7-a5d3-7d83b640e6be",
+      "name": "Check Youtube API Quota"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b8316619-23c7-4e55-b4b9-7a49592093c5",
+              "leftValue": "={{ $json.units_used }}",
+              "rightValue": 8600,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -48,
+        64
+      ],
+      "id": "9d1b7635-3dc1-4b77-83a5-5042dd0c433a",
+      "name": "quote check (8600)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b8316619-23c7-4e55-b4b9-7a49592093c5",
+              "leftValue": "={{ $json.units_used }}",
+              "rightValue": 10000,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        160,
+        16
+      ],
+      "id": "b8ad2df4-46f2-40be-ab2c-218a80b5a22d",
+      "name": "quota check (10000)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO incoming_videos (video_id, clip_class, status)\nVALUES ($1, $2, 'queued')\nON CONFLICT (video_id) DO NOTHING;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.videoId, $json.clip_class] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        -448
+      ],
+      "id": "da0e1363-73af-4933-9edf-3d7b7cb60fdb",
+      "name": "Insert Incoming Videos"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO playlist_seen_videos (video_id)\nVALUES ($1)\nON CONFLICT (video_id) DO NOTHING;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ $json.videoId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        -288
+      ],
+      "id": "038d4453-7cb0-4f9f-958d-2971a19af6e0",
+      "name": "Mark Seen"
+    },
+    {
+      "parameters": {
+        "jsCode": "const searchCount = $('Build Search Jobs').all().length;\nreturn [{ json: { units_this_run: searchCount * 100 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -240
+      ],
+      "id": "aabb57d1-d09e-4b5c-959e-eb6a56ba3937",
+      "name": "Compute Quota This Run"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO youtube_quota_usage (usage_date, units_used, updated_at)\nVALUES (CURRENT_DATE, $1, now())\nON CONFLICT (usage_date)\nDO UPDATE SET\n  units_used = youtube_quota_usage.units_used + EXCLUDED.units_used,\n  updated_at = now();",
+        "options": {
+          "queryReplacement": "={{ $json.units_this_run }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1040,
+        -240
+      ],
+      "id": "018b8635-bda5-4580-b75a-00f65c647f6a",
+      "name": "Increment Quota Used"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.clip_class,\n  t.target_count,\n  COALESCE(COUNT(c.clip_id), 0) AS queued_count,\n  (t.target_count - COALESCE(COUNT(c.clip_id), 0)) AS deficit\nFROM feed_inventory_targets t\nLEFT JOIN clips c\n  ON c.clip_class = t.clip_class\n AND c.status = 'queued'\nGROUP BY t.clip_class, t.target_count\nHAVING (t.target_count - COALESCE(COUNT(c.clip_id), 0)) > 0;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        64
+      ],
+      "id": "2c04049a-351d-4483-99ea-05d04fc106ae",
+      "name": "Get Classes For Backup"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b8316619-23c7-4e55-b4b9-7a49592093c5",
+              "leftValue": "={{ $json.units_used }}",
+              "rightValue": 10000,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2000,
+        64
+      ],
+      "id": "d6c70f92-fa26-4053-8129-9583be98be20",
+      "name": "quota check (10000) Layer 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b8316619-23c7-4e55-b4b9-7a49592093c5",
+              "leftValue": "={{ $json.units_used }}",
+              "rightValue": 8600,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1776,
+        64
+      ],
+      "id": "e5a245e9-355c-4b16-846e-44c0c5f13204",
+      "name": "quote check (8600) Layer 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const searchCount = $('Build Backup Search Jobs').all().length;\nreturn [{ json: { units_this_run: searchCount * 100 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        32
+      ],
+      "id": "8141f43a-5e81-45e2-9b6d-bd8cb65fb4e7",
+      "name": "Compute Quota This Run1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO youtube_quota_usage (usage_date, units_used, updated_at)\nVALUES (CURRENT_DATE, $1, now())\nON CONFLICT (usage_date)\nDO UPDATE SET\n  units_used = youtube_quota_usage.units_used + EXCLUDED.units_used,\n  updated_at = now();",
+        "options": {
+          "queryReplacement": "={{ $json.units_this_run }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2912,
+        32
+      ],
+      "id": "4bd5cb2c-621e-4e66-862e-2438815cface",
+      "name": "Increment Quota Used1"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "=50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        416,
+        -160
+      ],
+      "id": "f0b7e72c-4f75-4492-90a4-e2575abfd671",
+      "name": "Youtube Search"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BACKUP = {\n  cars: 'car reviews viral',\n  tech: 'tech viral',\n  music: 'music viral',\n  gaming: 'gaming viral',\n  fitness: 'workout motivation',\n  cooking: 'cooking viral',\n  travel: 'travel vlog',\n  comedy: 'comedy viral',\n  education: 'educational viral',\n  diy: 'DIY viral',\n  beauty: 'makeup viral',\n  fashion: 'fashion viral',\n  sports: 'sports viral',\n  news: 'news viral',\n  entertainment: 'celebrity viral',\n  science: 'science viral',\n  history: 'history viral',\n  art: 'art viral',\n  pets: 'pets viral',\n  nature: 'nature viral',\n  business: 'business viral',\n  motivation: 'motivation viral',\n  lifestyle: 'lifestyle viral',\n  other: 'viral trending',\n};\n\nconst items = $input.all();\nreturn items.map((item) => {\n  const j = item.json || {};\n  const clip_class = j.clip_class || 'other';\n  const query = BACKUP[clip_class] || BACKUP.other;\n  const maxResults = Math.min(Math.max(j.deficit || 1, 1), 10);\n  return { json: { clip_class, query, maxResults } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        48
+      ],
+      "id": "a02d9f33-f4fc-499b-9821-faaebc1d047b",
+      "name": "Build Backup Search Jobs"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "=50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2256,
+        -96
+      ],
+      "id": "05c8ba53-e713-40fe-a9d6-4ee5aa866df9",
+      "name": "Youtube Search Backup"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(u.units_used, 0) AS units_used,\n  COALESCE(u.daily_limit, 10000) AS daily_limit\nFROM (SELECT 1) dummy\nLEFT JOIN youtube_quota_usage u ON u.usage_date = CURRENT_DATE;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1616,
+        64
+      ],
+      "id": "63dfe326-b5ab-4037-9dbb-46377223cd78",
+      "name": "Check Youtube API Quota Backup"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2512,
+        32
+      ],
+      "id": "1e9c08f3-19f1-4462-b5e4-f81ac45e9ab7",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Quota Warning! Used: {{ $('Check Youtube API Quota').item.json.units_used }} / Max : {{ $('Check Youtube API Quota').item.json.daily_limit }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        160,
+        192
+      ],
+      "id": "b626cf0b-3a8c-4b1f-9803-fa55c8c34999",
+      "name": "Discord Warning",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Quota Warning! Used: {{ $('Check Youtube API Quota Backup').item.json.units_used }} / Max : {{ $('Check Youtube API Quota Backup').item.json.daily_limit }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        240
+      ],
+      "id": "03903234-9d3b-4407-bdfc-9cc44e8a5ca2",
+      "name": "Discord Warning1",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Quota Max! ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        240
+      ],
+      "id": "056cc535-427e-4f90-9a0d-ed5c7f62349f",
+      "name": "Discord Warning2",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "Quota Max!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        368,
+        192
+      ],
+      "id": "83c29578-63b1-4778-b771-701bf6cc93a3",
+      "name": "Discord",
+      "retryOnFail": false,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -576,
+        64
+      ],
+      "id": "f23474f9-1f2e-4c53-8b7c-4404d41904a1",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get Classes Needing Inventory (Postgres)": {
+      "main": [
+        [
+          {
+            "node": "Check Youtube API Quota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Search Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Youtube Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidates (Code)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compute Quota This Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidates (Code)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate and build an IN list",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter New Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate and build an IN list": {
+      "main": [
+        [
+          {
+            "node": "Get Already Seen (Postgres)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Already Seen (Postgres)": {
+      "main": [
+        [
+          {
+            "node": "Filter New Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Only": {
+      "main": [
+        [
+          {
+            "node": "Has New Videos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Videos?": {
+      "main": [
+        [
+          {
+            "node": "Insert Incoming Videos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mark Seen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Classes For Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Youtube API Quota": {
+      "main": [
+        [
+          {
+            "node": "quote check (8600)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "quote check (8600)": {
+      "main": [
+        [
+          {
+            "node": "quota check (10000)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "quota check (10000)": {
+      "main": [
+        [
+          {
+            "node": "Build Search Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Incoming Videos": {
+      "main": [
+        []
+      ]
+    },
+    "Mark Seen": {
+      "main": [
+        []
+      ]
+    },
+    "Compute Quota This Run": {
+      "main": [
+        [
+          {
+            "node": "Increment Quota Used",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "quote check (8600) Layer 2": {
+      "main": [
+        [
+          {
+            "node": "quota check (10000) Layer 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Warning1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Classes For Backup": {
+      "main": [
+        [
+          {
+            "node": "Check Youtube API Quota Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Quota This Run1": {
+      "main": [
+        [
+          {
+            "node": "Increment Quota Used1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Youtube Search": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "quota check (10000) Layer 2": {
+      "main": [
+        [
+          {
+            "node": "Build Backup Search Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Warning2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Backup Search Jobs": {
+      "main": [
+        [
+          {
+            "node": "Youtube Search Backup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Check Youtube API Quota Backup": {
+      "main": [
+        [
+          {
+            "node": "quote check (8600) Layer 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Youtube Search Backup": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidates (Code)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compute Quota This Run1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Classes Needing Inventory (Postgres)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f371947a-c25d-4ab6-a0f7-7dc0eb0b8970",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "298553e50f5cd03acba69e8c19edbd086b5970cc5886c258ea8e64ec648c7111"
+  },
+  "id": "4xmGEAp5M9doTpU9",
+  "tags": [
+    {
+      "name": "triggers at midnight",
+      "id": "iAlIKQM9vTGgtAkr",
+      "updatedAt": "2026-03-17T00:39:24.194Z",
+      "createdAt": "2026-03-17T00:39:24.194Z"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# Ollama — local LLM for n8n (title generation, classification, segment picking).
+# Requires: NVIDIA GPU, nvidia-docker. Network: use dockge_default or your n8n network.
+# See docs/docker.md for setup.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+
+volumes:
+  ollama-data:
+
+networks:
+  dockge_default:
+    external: true

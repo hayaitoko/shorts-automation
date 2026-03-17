@@ -1,0 +1,31 @@
+# Whisper ASR — transcription for n8n (Index Shorts, Create Shorts).
+# Requires: NVIDIA GPU, nvidia-docker. n8n workflows use http://whisper-asr:9010 when on same network.
+# See docs/docker.md for setup.
+
+services:
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
+    container_name: whisper-asr
+    restart: unless-stopped
+    ports:
+      - "9010:9000"
+    environment:
+      ASR_ENGINE: openai_whisper
+      ASR_MODEL: base
+    volumes:
+      - whisper-cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+
+volumes:
+  whisper-cache:
+
+networks:
+  dockge_default:
+    external: true

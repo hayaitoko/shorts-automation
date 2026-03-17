@@ -1,0 +1,30 @@
+# Postgres for n8n_queue, used by all n8n workflows (clips, scheduler, quota, and so on).
+# Copy .env.example to .env in project root and set POSTGRES_PASSWORD. Run from project root:
+#   docker compose -f docker/postgres/docker-compose.yml up -d
+# See docs/docker.md for setup.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres-n8n
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-n8n}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-n8n_queue}
+    volumes:
+      - postgres_n8n_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n} -d ${POSTGRES_DB:-n8n_queue}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_n8n_data:
+
+networks:
+  dockge_default:
+    external: true

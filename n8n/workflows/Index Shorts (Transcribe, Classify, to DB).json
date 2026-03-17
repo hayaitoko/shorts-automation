@@ -1,0 +1,622 @@
+{
+  "name": "Index Shorts (Transcribe, Classify, to DB)",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6192afab-3884-4f29-9d62-c45c4aa59cdd",
+              "leftValue": "={{ $json.stdout }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1024,
+        272
+      ],
+      "id": "4b559d9b-7089-4c92-b105-20930b3bb43f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "content": "Indexing only: find MP4 (excl. processed/) → transcribe → classify (content class) → title → insert into Postgres → move file to processed/. Upload is a separate workflow.",
+        "height": 320,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        160
+      ],
+      "id": "d698a262-c246-4a04-9d0b-6b11926ed938",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "llama3.1:8b",
+          "mode": "list",
+          "cachedResultName": "llama3.1:8b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a viral short-form content title generator.\n\nInput: a transcript of a video.\nTask: Create ONE title based only on the transcript’s main hook and most surprising/valuable moment.\n\nRules:\n- Output MUST be ONLY the final title text, nothing before or after.\n- Do NOT explain, do NOT say \"Here is the title\", do NOT include character counts.\n- Max 97 characters (shorter is fine), no need to hit it exactly.\n- Use punchy, curiosity-driven wording. Front-load the hook in the first 6 words.\n- Optimize for TikTok/YouTube Shorts: strong emotion + clear topic + benefit.\n- Include 3–6 relevant hashtags at the end (hashtags count in the 97 chars).\n- No emojis. No quotes. Do not mention “transcript” or “AI”.\n\nTranscript:\n{{ $json.data }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        144
+      ],
+      "id": "9367afee-2ce3-434c-9e13-963aa9ab4e04",
+      "name": "Generate Title"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        0,
+        368
+      ],
+      "id": "18d7fd08-ecdc-43b8-92d0-1f57c7bbeaa3",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "executeOnce": "=",
+        "command": "find /var/lib/n8n/shorts/holding -type f -name \"*.mp4\" -exec ls -t {} + | tail -n 1"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        272
+      ],
+      "id": "faf5c718-cbd3-41cf-a2c3-3361e9eb2874",
+      "name": "Find Video Files"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Find Video Files').item.json.stdout }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -848,
+        144
+      ],
+      "id": "56c4bcd6-ca97-400d-a90b-88d20bd81996",
+      "name": "Read Video File"
+    },
+    {
+      "parameters": {
+        "outputFileName": "output.wav",
+        "outputBinary": "audio",
+        "command": "-i {input} -vn -ac 1 -ar 16000 -c:a pcm_s16le -f wav {output}"
+      },
+      "type": "@raisaroj/n8n-nodes-ffmpeg.ffmpeg",
+      "typeVersion": 1,
+      "position": [
+        -656,
+        144
+      ],
+      "id": "6c1fc136-3013-4fa7-81db-f6adba59d291",
+      "name": "Create Wav File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper-asr:9010/asr",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "task",
+              "value": "transcribe"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            },
+            {
+              "name": "output",
+              "value": "json"
+            },
+            {
+              "name": "encode",
+              "value": "false"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio_file",
+              "inputDataFieldName": "audio"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -480,
+        144
+      ],
+      "id": "e85a1508-9fc1-4811-bbe8-4d85126b7384",
+      "name": "Whisper ASR Server Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map((item) => {\n  const raw =\n    item.json.youtube_title ??\n    item.json.title ??\n    item.json.content ??\n    '';\n\n  let title = String(raw).replace(/[<>]/g, '').replace(/\\s+/g, ' ').trim();\n  title = title.slice(0, 100).trim();\n\n  if (!title) title = 'Untitled';\n\n  return {\n    json: { ...item.json, youtube_title: title },\n    binary: item.binary, // <-- THIS keeps binary.data\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        144
+      ],
+      "id": "c73e5d8b-4aa1-437c-98e2-740a7a1b1576",
+      "name": "Refine Title Data"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "llama3.1:8b",
+          "mode": "list",
+          "cachedResultName": "llama3.1:8b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You classify short-form video content into exactly one content class and suggest tags.\n\nClasses (pick ONE): cars, tech, music, gaming, fitness, cooking, travel, comedy, education, diy, beauty, fashion, sports, news, entertainment, science, history, art, pets, nature, business, motivation, lifestyle, other.\n\nTranscript:\n{{ $json.data || $json.text || '' }}\n\nRespond with ONLY valid JSON, no markdown or explanation:\n{\"clip_class\": \"<one of the classes above>\", \"tags\": [\"tag1\", \"tag2\", \"...\"], \"confidence\": 0.0-1.0}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        352
+      ],
+      "id": "6d1da740-9ce1-43b9-a977-b8ca8df01f8c",
+      "name": "Classify Video"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nlet raw = item.json.message?.content ?? item.json.content ?? item.json.response ?? JSON.stringify(item.json);\nconst jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);\nconst parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};\nconst clip_class = parsed.clip_class || 'other';\nconst tags = Array.isArray(parsed.tags) ? parsed.tags : [];\nconst confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;\nreturn [{ json: { clip_class, tags, confidence } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        352
+      ],
+      "id": "47b05b64-fffb-44df-94f6-4b6e093f891b",
+      "name": "Parse Classify"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst findNode = $('Find Video Files').first();\nconst file_path_original = (findNode?.json?.stdout ?? '').trim();\nif (!file_path_original) return [];\nconst lastSlash = file_path_original.lastIndexOf('/');\nconst dir = lastSlash >= 0 ? file_path_original.slice(0, lastSlash) : file_path_original;\nconst base = file_path_original.slice(lastSlash + 1);\nconst file_path_processed = `/var/lib/n8n/shorts/processed/${base}`;\nconst transcript = item.json.data ?? item.json.text ?? '';\nconst title = item.json.youtube_title ?? item.json.title ?? 'Untitled';\nconst clip_class = item.json.clip_class ?? 'other';\nconst tags = Array.isArray(item.json.tags) ? item.json.tags : [];\nreturn [{\n  json: {\n    file_path: file_path_processed,\n    file_path_original,\n    title,\n    transcript,\n    clip_class,\n    tags,\n    status: 'queued'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        368
+      ],
+      "id": "f99dd76d-6236-4dd8-926a-58812356ff2f",
+      "name": "Prepare for DB"
+    },
+    {
+      "parameters": {
+        "schema": "public",
+        "table": "clips",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "file_path": "={{ $json.file_path }}",
+            "title": "={{ $json.title }}",
+            "transcript": "={{ $json.transcript }}",
+            "clip_class": "={{ $json.clip_class }}",
+            "tags": "={{ $json.tags }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "clip_id",
+              "displayName": "clip_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "file_path",
+              "displayName": "file_path",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "transcript",
+              "displayName": "transcript",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "clip_class",
+              "displayName": "clip_class",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tags",
+              "displayName": "tags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "array",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reserved_at",
+              "displayName": "reserved_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reserved_group",
+              "displayName": "reserved_group",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "posted_at",
+              "displayName": "posted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform_response",
+              "displayName": "platform_response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        432,
+        368
+      ],
+      "id": "bfb6d17e-7c8e-4691-9431-2107bec5140c",
+      "name": "Insert Clip (Postgres)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst o = item.json.file_path_original;\nconst p = item.json.file_path;\nif (!o || !p) return [];\nconst dir = p.slice(0, p.lastIndexOf('/'));\nitem.json.command = 'mkdir -p \"' + dir + '\" && mv \"' + o + '\" \"' + p + '\"';\nreturn [item];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        144
+      ],
+      "id": "671297b1-983a-4760-a179-3d8dd466f7d7",
+      "name": "Build Move Command"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        640,
+        144
+      ],
+      "id": "bf4b2c1e-e72f-4b7b-a358-b5f92bb67eed",
+      "name": "Move to Processed"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1376,
+        272
+      ],
+      "id": "8044ccee-2999-4868-b6c3-3e9424959614",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Read Video File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Title": {
+      "main": [
+        [
+          {
+            "node": "Refine Title Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Prepare for DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Video": {
+      "main": [
+        [
+          {
+            "node": "Parse Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classify": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for DB": {
+      "main": [
+        [
+          {
+            "node": "Insert Clip (Postgres)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Move Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Move Command": {
+      "main": [
+        [
+          {
+            "node": "Move to Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Video Files": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Video File": {
+      "main": [
+        [
+          {
+            "node": "Create Wav File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Wav File": {
+      "main": [
+        [
+          {
+            "node": "Whisper ASR Server Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper ASR Server Request": {
+      "main": [
+        [
+          {
+            "node": "Generate Title",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Classify Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refine Title Data": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find Video Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "bd7d7b49-fa0f-478d-90c4-724d2230a524",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "298553e50f5cd03acba69e8c19edbd086b5970cc5886c258ea8e64ec648c7111"
+  },
+  "id": "PxhiYBEscQVpc0xE",
+  "tags": [
+    {
+      "name": "triggers every 30s",
+      "id": "4bArshkAnrPf9m3U",
+      "updatedAt": "2026-03-17T00:39:49.317Z",
+      "createdAt": "2026-03-17T00:39:49.317Z"
+    }
+  ]
+}

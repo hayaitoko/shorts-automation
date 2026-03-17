@@ -1,0 +1,525 @@
+{
+  "name": "Create Shorts (Playlist, Create Clips, Render Clips)",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT video_id FROM shorts_playlist_processed WHERE video_id = ANY($1::text[])",
+        "options": {
+          "queryReplacement": "={{ [$json.videoIds] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        256
+      ],
+      "id": "2e538bc7-e9a1-429f-933a-332a11cffe61",
+      "name": "get already processed"
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = $('Get Next Incoming Videos').all();\nconst processed = $('get already processed').all();\nconst processedIds = new Set(processed.map(p => p.json.video_id));\nreturn candidates\n  .filter(c => !processedIds.has(c.json.videoId ?? c.json.video_id))\n  .map(c => ({ json: c.json }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        384
+      ],
+      "id": "c318bce8-fe2f-48b6-b0b0-4d6392f4d23a",
+      "name": "filter to unseen only"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "28056a80-8831-4504-9951-2441077c202f",
+              "leftValue": "={{ $items(\"filter to unseen only\").length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        384
+      ],
+      "id": "67b8f617-2339-4768-8d72-fb7e40e80c37",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -32,
+        592
+      ],
+      "id": "d237303b-d395-4303-9924-91276b870242",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "fileSelector": "=/var/lib/n8n/shorts/raw/{{ $('If').item.json.videoId }}.mp4",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        608
+      ],
+      "id": "5835c966-8d0b-453b-b8e6-5cc8e9fd1729",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "outputFileName": "==audio_{{ $('If').item.json.videoId }}.wav",
+        "command": "-i {input} -vn -ac 1 -ar 16000 -c:a pcm_s16le -f wav {output}"
+      },
+      "type": "@raisaroj/n8n-nodes-ffmpeg.ffmpeg",
+      "typeVersion": 1,
+      "position": [
+        608,
+        608
+      ],
+      "id": "3d52223e-6ef9-41a1-b0a2-1d0a42706252",
+      "name": "Run ffmpeg"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper-asr:9010/asr",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "task",
+              "value": "transcribe"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            },
+            {
+              "name": "output",
+              "value": "json"
+            },
+            {
+              "name": "encode",
+              "value": "false"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio_file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        816,
+        608
+      ],
+      "id": "68ffd783-0b49-4f00-a046-79051c8ccc6c",
+      "name": "whisper asr request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst data = item.json;\n\nlet segments = data.segments || data.result?.segments || [];\nif (!Array.isArray(segments)) segments = [];\n\nconst transcriptText = segments\n  .map(s => `[${s.start?.toFixed(1)}s-${s.end?.toFixed(1)}s] ${s.text || ''}`)\n  .join('\\n');\n\n// Get videoId/title from earlier node\nconst videoItem = $('Download Video (yt-dlp)').first().json;\nconst videoId = videoItem.videoId;\nconst title = videoItem.title;\n\nreturn [{ json: { videoId, title, transcriptText, segments, rawResponse: data } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        608
+      ],
+      "id": "ba00d255-f358-4e12-aab2-229c1f65c070",
+      "name": "format transcript for LLM"
+    },
+    {
+      "parameters": {
+        "command": "=yt-dlp --js-runtimes node:/usr/bin/node -f \"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best\" --merge-output-format mp4 -o \"/var/lib/n8n/shorts/raw/{{ $json.videoId }}.%(ext)s\" \"https://www.youtube.com/watch?v={{ $json.videoId }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        192,
+        608
+      ],
+      "id": "e7aa0473-e391-4657-a723-81c4af0e4ce0",
+      "name": "Download Video (yt-dlp)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst videoId = $('If').first().json.videoId;\n\n// Include .content and a couple of other common shapes\nconst raw =\n  item.json.response ||\n  item.json.text ||\n  item.json.message?.content ||\n  item.json.content || // <-- your current Ollama output\n  '';\n\n// Try to extract the first JSON object from the text\nlet parsed = {};\ntry {\n  const match = String(raw).match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    parsed = JSON.parse(match[0]);\n  }\n} catch (e) {\n  // swallow parse error; parsed will stay {}\n}\n\nconst segments = Array.isArray(parsed.segments) ? parsed.segments : [];\nconst raw_path = `/var/lib/n8n/shorts/raw/${videoId}.mp4`;\n\nreturn [\n  {\n    json: {\n      videoId,\n      segments,\n      raw_path,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        816
+      ],
+      "id": "f140a0fc-9f45-4ed8-961e-b1ff88d7ef25",
+      "name": "parse segments"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "llama3.1:8b",
+          "mode": "list",
+          "cachedResultName": "llama3.1:8b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are editing a long-form video into short-form clips (30–60 seconds) for Shorts/TikTok/Reels.\nTranscript:\n{{ $json.transcriptText }}\nTask: Choose 3 to 7 segments that are 30–60 seconds long each, high-impact, high-energy self-contained, with a clean introduction and exit, and algorithm-optomised.\nFor each segment, provide:\n- segment_id\n- start (seconds)\n- end (seconds)\n- caption_chunks: array of { start, end, text } with 1–5 words per chunk.\n\n\nOutput ONLY valid JSON, NOTHING ELSE:\n{\"video_id\": \"{{ $('If').item.json.videoId }}\", \"segments\": [ ... ]}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        608
+      ],
+      "id": "b3735291-0f78-43ec-b9b1-3468c0006c31",
+      "name": "ollama segment picker"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst { videoId, segments, raw_path } = item.json;\nif (!segments || segments.length === 0) return [];\n\nreturn segments.map((seg, idx) => ({\n  json: {\n    videoId,\n    segment_id: seg.segment_id ?? idx + 1,\n    start: Number(seg.start) || 0,\n    end: Number(seg.end) || 0,\n    caption_chunks: Array.isArray(seg.caption_chunks) ? seg.caption_chunks : [],\n    raw_path,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        816
+      ],
+      "id": "b14cd6d7-3f45-492d-86b1-8034084a90ad",
+      "name": "build subtitles"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst { videoId, segment_id, start, end, caption_chunks, raw_path } = item.json;\n\nconst fontFile = \"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf\";\n\nconst filters = caption_chunks.map((c) => {\n  const txt = String(c.text || '').replace(/'/g, \"'\\\\''\");\n  return (\n    `drawtext=fontfile='${fontFile}':text='${txt}':` +\n    `x=(w-text_w)/2:y=h*0.66:` +\n    `fontsize=48:fontcolor=white:box=1:boxcolor=0x000000AA:` +\n    `enable='between(t,${c.start},${c.end})'`\n  );\n}).join(',');\n\nconst outPath = `/var/lib/n8n/shorts/holding/${videoId}_${segment_id}.mp4`;\n\nreturn [\n  {\n    json: { videoId, segment_id, start, end, raw_path, outPath, filter: filters },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        816
+      ],
+      "id": "fc7c63e8-ad1a-47b3-bcc7-c653091b0c38",
+      "name": "build ffmpeg args"
+    },
+    {
+      "parameters": {
+        "executeOnce": "={{ true }}",
+        "command": "=ffmpeg -y \\\n  -ss {{ $json.start }} -to {{ $json.end }} \\\n  -i \"{{ $json.raw_path }}\" \\\n  -filter_complex \"[0:v]scale=-2:1920,crop=1080:1920:(in_w-1080)/2:0,{{ $json.filter }}[v]\" \\\n  -map \"[v]\" -map 0:a? \\\n  -c:v h264_nvenc -preset p4 -rc vbr -cq 20 \\\n  -c:a aac -b:a 128k \\\n  \"{{ $json.outPath }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        608,
+        816
+      ],
+      "id": "81f7ed95-fe98-4370-8129-0d612280c559",
+      "name": "Render Segment"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        192,
+        384
+      ],
+      "id": "321980f5-98ab-48f8-9cf9-e4fbfc33c052",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT video_id AS \"videoId\", clip_class\nFROM incoming_videos\nWHERE status = 'queued'\nORDER BY added_at ASC\nLIMIT 20;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        384
+      ],
+      "id": "cabf5415-6b9e-4c7a-b1ab-ced7d868ad19",
+      "name": "Get Next Incoming Videos"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst videoIds = items.map(i => i.json.videoId ?? i.json.video_id).filter(Boolean);\nconst inList = videoIds.map(id => `'${String(id).replace(/'/g, \"''\")}'`).join(',');\nreturn [{ json: { videoIds, inList } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        384
+      ],
+      "id": "02b5cc88-d004-46fe-bbe2-6a454dfe71fb",
+      "name": "Build Processed-Check Params"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "get already processed": {
+      "main": [
+        [
+          {
+            "node": "filter to unseen only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filter to unseen only": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Download Video (yt-dlp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Run ffmpeg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run ffmpeg": {
+      "main": [
+        [
+          {
+            "node": "whisper asr request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "whisper asr request": {
+      "main": [
+        [
+          {
+            "node": "format transcript for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format transcript for LLM": {
+      "main": [
+        [
+          {
+            "node": "ollama segment picker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Video (yt-dlp)": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse segments": {
+      "main": [
+        [
+          {
+            "node": "build subtitles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ollama segment picker": {
+      "main": [
+        [
+          {
+            "node": "parse segments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build subtitles": {
+      "main": [
+        [
+          {
+            "node": "build ffmpeg args",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build ffmpeg args": {
+      "main": [
+        [
+          {
+            "node": "Render Segment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Segment": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Next Incoming Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Next Incoming Videos": {
+      "main": [
+        [
+          {
+            "node": "Build Processed-Check Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Processed-Check Params": {
+      "main": [
+        [
+          {
+            "node": "get already processed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "filter to unseen only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c2dfbfb0-b0c6-4624-ae4c-39af68749c9c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "298553e50f5cd03acba69e8c19edbd086b5970cc5886c258ea8e64ec648c7111"
+  },
+  "id": "j28kVHQ0s6sf0W6A",
+  "tags": [
+    {
+      "name": "triggers every 2 min",
+      "id": "86VbzxX5xfXyHoIH",
+      "updatedAt": "2026-03-17T00:39:38.887Z",
+      "createdAt": "2026-03-17T00:39:38.887Z"
+    }
+  ]
+}
